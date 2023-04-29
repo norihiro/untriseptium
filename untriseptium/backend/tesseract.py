@@ -1,0 +1,175 @@
+import math
+import editdistance
+from copy import deepcopy
+from untriseptium.util import TextLocator, Location
+
+
+class _Text():
+    def __init__(self):
+        self.level = 0
+        self.page_num = 0
+        self.block_num = 0
+        self.par_num = 0
+        self.line_num = 0
+        self.word_num = 0
+        self.left = 0
+        self.top = 0
+        self.width = 0
+        self.height = 0
+        self.confidence = 0
+        self.text = ''
+        self.location = None
+
+    def __str__(self):
+        right = self.left+self.width
+        bottom = self.top+self.height
+        return f'_Text("{self.text}" ' \
+               f'at ({self.left} {self.top} {right} {bottom}) ' \
+               f'size {self.width}x{self.height}'
+
+    def _set(self, header, line):
+        for i, t in enumerate(line):
+            if header[i] == 'level':
+                self.level = int(t)
+            elif header[i] == 'page_num':
+                self.page_num = int(t)
+            elif header[i] == 'block_num':
+                self.block_num = int(t)
+            elif header[i] == 'par_num':
+                self.par_num = int(t)
+            elif header[i] == 'line_num':
+                self.line_num = int(t)
+            elif header[i] == 'word_num':
+                self.word_num = int(t)
+            elif header[i] == 'left':
+                self.left = int(t)
+            elif header[i] == 'top':
+                self.top = int(t)
+            elif header[i] == 'width':
+                self.width = int(t)
+            elif header[i] == 'height':
+                self.height = int(t)
+            elif header[i] == 'conf':
+                self.confidence = float(t) / 100.0
+            elif header[i] == 'text':
+                self.text = t
+        self.location = Location(self.left, self.top, self.left + self.width,
+                                 self.top + self.height)
+
+
+# FIXME: I don't know these magic numbers are ok.
+# When ocr_unconfidence_ratio >= confidence_threshold, all
+# ambiguous words will match.
+# FIXME: Consider to define some presets for these numbers.
+ocr_unconfidence_ratio = 0.1
+confidence_threshold = 0.2
+
+
+def _conf_ocr_text(ocr_txt, ideal_txt):
+    distance = editdistance.eval(ocr_txt.text, ideal_txt)
+    max_length = max(len(ocr_txt.text), len(ideal_txt))
+    ocr_invconf = (1.0 - ocr_txt.confidence) * ocr_unconfidence_ratio
+    return ((max_length - distance) * ocr_txt.confidence +
+            distance * ocr_invconf) / max_length
+
+
+def _conf_next_word(t, ocr_txt, text_confidence):
+    confidence = t.confidence * text_confidence
+    if t.location:
+        geo_dist = t.location.distance_at_point(ocr_txt.location)
+        t_size = t.location.diagonal_size()
+        n_size = ocr_txt.location.diagonal_size()
+        char_size = (t_size + n_size) / (len(t.text) + len(ocr_txt.text))
+        if geo_dist > char_size:
+            ex = (geo_dist - char_size) / char_size
+            confidence *= math.exp(-ex * ex)
+    return confidence
+
+
+def _new_text_locator(t, ocr_txt, confidence):
+    t = deepcopy(t)
+    t.text = (t.text + ' ' + ocr_txt.text) if t.text else ocr_txt.text
+    t.confidence = confidence
+    t.add_location(ocr_txt.location)
+    return t
+
+
+def _conf_old_word(t, current_location):
+    # If the found word locates too far from current location, lower the
+    # priority.
+    if t.location and t.text:
+        geo_dist = t.location.distance_at_point(current_location)
+        word_size = t.location.diagonal_size()
+        if geo_dist > word_size:
+            ex = (geo_dist - word_size) / word_size
+            return t.confidence * math.exp(-ex * ex)
+    return t.confidence
+
+
+class BackendTesseract:
+    def __init__(self):
+        # FIXME: Workaround to avoid system to be shutdown
+        # https://github.com/tesseract-ocr/tesseract/issues/2064
+        # This workaround should be removed or limited to the certain system
+        # only.
+        import os
+        os.environ['OMP_THREAD_LIMIT'] = '1'
+
+    def ocr(self, image):
+        from pytesseract import pytesseract
+        tsv = pytesseract.image_to_data(image)
+
+        data = list()
+        header = None
+        for line in tsv.split('\n'):
+            line = line.split('\t')
+            if not header:
+                header = line
+                continue
+            if len(line) < len(header):
+                continue
+            d = _Text()
+            try:
+                d._set(header, line)
+            except BaseException as e:
+                raise (Exception('Failed to parse line: "%s"' % line, e))
+            data.append(d)
+
+        return data
+
+    def find_texts(self, data, text):
+        text = text.split(' ')
+
+        def init_dp():
+            t0 = TextLocator()
+            t1 = TextLocator()
+            t1.confidence = 1.0
+            return [t1 if i == 0 else t0 for i in range(len(text) + 1)]
+
+        dp0 = init_dp()
+        cand = list()
+
+        for ocr_txt in data:
+            if ocr_txt.confidence < 0:
+                continue
+            dp1 = init_dp()
+
+            for i, t in enumerate(text):
+                confidence = _conf_ocr_text(ocr_txt, t)
+                if confidence < confidence_threshold:
+                    continue
+
+                dp_confidence = _conf_next_word(dp0[i], ocr_txt, confidence)
+                if dp_confidence > dp1[i + 1].confidence:
+                    d = _new_text_locator(dp0[i], ocr_txt, dp_confidence)
+                    dp1[i + 1] = d
+                    if i == len(text) - 1:
+                        cand.append(d)
+
+            for i, d in enumerate(dp1):
+                c = _conf_old_word(dp0[i], ocr_txt.location)
+
+                if d.confidence > c:
+                    dp0[i] = d
+
+        return sorted(cand, key=lambda d: -d.confidence)
