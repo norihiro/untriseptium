@@ -57,22 +57,6 @@ class _Text():
                                  self.top + self.height)
 
 
-# FIXME: I don't know these magic numbers are ok.
-# When ocr_unconfidence_ratio >= confidence_threshold, all
-# ambiguous words will match.
-# FIXME: Consider to define some presets for these numbers.
-ocr_unconfidence_ratio = 0.1
-confidence_threshold = 0.2
-
-
-def _conf_ocr_text(ocr_txt, ideal_txt):
-    distance = editdistance.eval(ocr_txt.text, ideal_txt)
-    max_length = max(len(ocr_txt.text), len(ideal_txt))
-    ocr_invconf = (1.0 - ocr_txt.confidence) * ocr_unconfidence_ratio
-    return ((max_length - distance) * ocr_txt.confidence +
-            distance * ocr_invconf) / max_length
-
-
 def _conf_next_word(t, ocr_txt, text_confidence):
     confidence = t.confidence * text_confidence
     if t.location:
@@ -115,9 +99,22 @@ class BackendTesseract:
         import os
         os.environ['OMP_THREAD_LIMIT'] = '1'
 
+        self.lang = None
+        # FIXME: I don't know these magic numbers are ok.
+        # When ocr_unconfidence_ratio >= confidence_threshold, all
+        # ambiguous words will match.
+        # FIXME: Consider to define some presets for these numbers.
+        self.ocr_unconfidence_ratio = 0.1
+        self.confidence_threshold = 0.2
+
+    def preset(self, preset_name):
+        if preset_name == 'ja':
+            self.lang = 'jpn'
+            self.find_texts = self._find_texts_char
+
     def ocr(self, image):
         from pytesseract import pytesseract
-        tsv = pytesseract.image_to_data(image)
+        tsv = pytesseract.image_to_data(image, lang=self.lang)
 
         data = list()
         header = None
@@ -137,7 +134,17 @@ class BackendTesseract:
 
         return data
 
+    def _conf_ocr_text(self, ocr_txt, ideal_txt):
+        distance = editdistance.eval(ocr_txt.text, ideal_txt)
+        max_length = max(len(ocr_txt.text), len(ideal_txt))
+        ocr_invconf = (1.0 - ocr_txt.confidence) * self.ocr_unconfidence_ratio
+        return ((max_length - distance) * ocr_txt.confidence +
+                distance * ocr_invconf) / max_length
+
     def find_texts(self, data, text):
+        return self._find_texts_word(data, text)
+
+    def _find_texts_word(self, data, text):
         text = text.split(' ')
 
         def init_dp():
@@ -155,8 +162,8 @@ class BackendTesseract:
             dp1 = init_dp()
 
             for i, t in enumerate(text):
-                confidence = _conf_ocr_text(ocr_txt, t)
-                if confidence < confidence_threshold:
+                confidence = self._conf_ocr_text(ocr_txt, t)
+                if confidence < self.confidence_threshold:
                     continue
 
                 dp_confidence = _conf_next_word(dp0[i], ocr_txt, confidence)
@@ -165,6 +172,44 @@ class BackendTesseract:
                     dp1[i + 1] = d
                     if i == len(text) - 1:
                         cand.append(d)
+
+            for i, d in enumerate(dp1):
+                c = _conf_old_word(dp0[i], ocr_txt.location)
+
+                if d.confidence > c:
+                    dp0[i] = d
+
+        return sorted(cand, key=lambda d: -d.confidence)
+
+    def _find_texts_char(self, data, text):
+        def init_dp():
+            t0 = TextLocator()
+            t1 = TextLocator()
+            t1.confidence = 1.0
+            return [t1 if i == 0 else t0 for i in range(len(text) + 1)]
+
+        dp0 = init_dp()
+        cand = list()
+
+        for ocr_txt in data:
+            if ocr_txt.confidence < 0:
+                continue
+            dp1 = init_dp()
+
+            for i_start in range(len(text)):
+                for i_end in range(i_start + 1, len(text) + 1):
+                    t = text[i_start:i_end]
+
+                    conf = self._conf_ocr_text(ocr_txt, t)
+                    if conf < self.confidence_threshold:
+                        continue
+
+                    dp_conf = _conf_next_word(dp0[i_start], ocr_txt, conf)
+                    if dp_conf > dp1[i_end].confidence:
+                        d = _new_text_locator(dp0[i_start], ocr_txt, dp_conf)
+                        dp1[i_end] = d
+                        if i_end == len(text):
+                            cand.append(d)
 
             for i, d in enumerate(dp1):
                 c = _conf_old_word(dp0[i], ocr_txt.location)
