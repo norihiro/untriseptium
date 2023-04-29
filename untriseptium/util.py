@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 
 
 def _linear_distance(a0, a1, b0, b1):
@@ -97,7 +98,7 @@ class TextLocator(Locator):
 
     def add_location(self, location):
         if not self.location:
-            self.location = location
+            self.location = deepcopy(location)
             return
         self.location.x0 = min(self.location.x0, location.x0)
         self.location.y0 = min(self.location.y0, location.y0)
