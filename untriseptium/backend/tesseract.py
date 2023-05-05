@@ -4,6 +4,10 @@ from copy import deepcopy
 from untriseptium.util import TextLocator, Location
 
 
+def _weighted_sum(v1, w1, v2, w2):
+    return (v1 * w1 + v2 + w2) / (w1 + w2)
+
+
 class _Text():
     def __init__(self):
         self.level = 0
@@ -104,13 +108,13 @@ class BackendTesseract:
         # When ocr_unconfidence_ratio >= confidence_threshold, all
         # ambiguous words will match.
         # FIXME: Consider to define some presets for these numbers.
-        self.ocr_unconfidence_ratio = 0.1
+        self.ocr_unconfidence_ratio = 0.4
         self.confidence_threshold = 0.2
 
     def preset(self, preset_name):
         if preset_name == 'ja':
             self.lang = 'jpn'
-            self.find_texts = self._find_texts_char
+            self.find_texts = self._find_texts_para_partial
 
     def ocr(self, image):
         from pytesseract import pytesseract
@@ -142,7 +146,7 @@ class BackendTesseract:
                 distance * ocr_invconf) / max_length
 
     def find_texts(self, data, text):
-        return self._find_texts_word(data, text)
+        return self._find_texts_para_partial(data, text)
 
     def _find_texts_word(self, data, text):
         text = text.split(' ')
@@ -198,7 +202,7 @@ class BackendTesseract:
 
             for i_start in range(len(text)):
                 for i_end in range(i_start + 1, len(text) + 1):
-                    t = text[i_start:i_end]
+                    t = text[i_start:i_end].strip()
 
                     conf = self._conf_ocr_text(ocr_txt, t)
                     if conf < self.confidence_threshold:
@@ -216,5 +220,68 @@ class BackendTesseract:
 
                 if d.confidence > c:
                     dp0[i] = d
+
+        return sorted(cand, key=lambda d: -d.confidence)
+
+    def _find_texts_para(self, data, text):
+        cand = list()
+
+        def _process(t):
+            confidence = self._conf_ocr_text(t, text)
+            if confidence < self.confidence_threshold:
+                return
+            d = deepcopy(t)
+            d.confidence = confidence
+            cand.append(d)
+
+        t = None
+        for ocr_txt in data:
+            if ocr_txt.confidence < 0:
+                if t and t.text:
+                    _process(t)
+                t = TextLocator()
+                t.confidence = 1.0
+                continue
+
+            t.confidence = _weighted_sum(
+                    t.confidence, len(t.text),
+                    ocr_txt.confidence, len(ocr_txt.text))
+            t.text = (t.text + ' ' + ocr_txt.text) if t.text else ocr_txt.text
+            t.add_location(ocr_txt.location)
+
+        _process(t)
+
+        return sorted(cand, key=lambda d: -d.confidence)
+
+    def _find_texts_para_partial(self, data, text):
+        cand = list()
+
+        for i_end in range(len(data)):
+            if data[i_end].confidence < 0:
+                i_para_start = i_end + 1
+                continue
+
+            for i_start in range(i_para_start, i_end + 1):
+                t = TextLocator()
+                conf_tot = 0.0
+                textlen_total = 0
+                for i in range(i_start, i_end + 1):
+                    ocr_txt = data[i]
+                    conf_tot += ocr_txt.confidence * len(ocr_txt.text)
+                    textlen_total += len(ocr_txt.text)
+                    if t.text:
+                        t.text = t.text + ' ' + ocr_txt.text
+                    else:
+                        t.text = ocr_txt.text
+                    t.add_location(ocr_txt.location)
+                t.confidence = conf_tot / textlen_total
+
+                confidence = self._conf_ocr_text(t, text)
+                if confidence < self.confidence_threshold:
+                    continue
+
+                d = deepcopy(t)
+                d.confidence = confidence
+                cand.append(d)
 
         return sorted(cand, key=lambda d: -d.confidence)
