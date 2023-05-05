@@ -4,6 +4,7 @@ screenshot, OCR, and mouse/keyboard control.
 '''
 
 from . import util
+import math
 
 # pylint: disable=import-outside-toplevel
 
@@ -47,7 +48,7 @@ class Untriseptium:
             self.capture()
         self.ocrdata = self.ocrengine.ocr(self.screenshot)
 
-    def find_text(self, text, location_hint=None):
+    def find_texts(self, text, location_hint=None, color_hint=None, create_image=False):
         if not self.ocrdata:
             self.ocr()
 
@@ -58,18 +59,52 @@ class Untriseptium:
                     location_hint[0] * self.screenshot.width,
                     location_hint[1] * self.screenshot.height
                     )
-            cand = None
+            if len(location_hint) > 2:
+                ambiguity = location_hint[2] * math.hypot(self.screenshot.width, self.screenshot.height)
+            else:
+                ambiguity = hypot(self.screenshot.width, self.screenshot.height)
             for t in texts:
                 xyt = t.location.center()
-                x, y = (xyh[0] - xyt[0], xyh[1] - xyt[1])
-                dist = x * x + y * y
-                if not cand or dist < cand_dist:
-                    cand = t
-                    cand_dist = dist
-            cand.set_context(self)
-            return cand
+                dist = math.hypot(xyh[0] - xyt[0], xyh[1] - xyt[1])
+                t.location_confidence = math.cos(dist * math.pi / ambiguity) * 0.5 + 0.5 if dist < ambiguity else 0
 
-        texts[0].set_context(self)
+        for t in texts:
+            t.set_context(self)
+            if create_image or color_hint:
+                loc = t.location
+                t.image = self.screenshot.crop((loc.x0, loc.y0, loc.x1, loc.y1))
+
+        if color_hint:
+            if len(color_hint) == 2:
+                fg_hint = util.make_color(color_hint[0])
+                bg_hint = util.make_color(color_hint[1])
+            else:
+                fg_hint = util.make_color(color_hint)
+                bg_hint = None
+            for t in texts:
+                try:
+                    fg, bg = util.find_text_color(t.image)
+                    diff = util.color_difference(fg, fg_hint)
+                    if bg_hint:
+                        diff = (diff + util.color_difference(bg, bg_hint)) * 0.5
+                    t.color_confidence = 1.0 - diff
+                except:
+                    t.color_confidence = 0.0
+
+        if location_hint or color_hint:
+            def sort_key(t):
+                conf = t.confidence
+                if location_hint:
+                    conf = conf * t.location_confidence
+                if color_hint:
+                    conf = conf * t.color_confidence
+                return -conf
+            return sorted(texts, key=sort_key)
+
+        return texts
+
+    def find_text(self, *args, **kwargs):
+        texts = self.find_texts(*args, **kwargs)
         return texts[0]
 
     def click(self, locator):

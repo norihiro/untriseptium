@@ -1,5 +1,6 @@
 import math
 from copy import deepcopy
+import PIL.ImageColor
 
 
 def _linear_distance(a0, a1, b0, b1):
@@ -107,3 +108,76 @@ class TextLocator(Locator):
 
     def center(self):
         return self.location.center()
+
+
+def color_difference(c1, c2):
+    if len(c1) == len(c2):
+        d = 0
+        for i in range(0, len(c1)):
+            d += abs(c1[i] - c2[i])
+        return d / (len(c1) * 255.0)
+    raise ValueError('Two colors need to be the same dimention.')
+
+
+def make_color(c):
+    if isinstance(c, str):
+        return PIL.ImageColor.getrgb(c)
+    return c
+
+
+def increase_contrast(img, center, gain):
+    data = list()
+    center = make_color(center)
+    for p in img.getdata():
+        p = [(c - o) * gain + o for c, o in zip(p, center)]
+        p = [0 if c <= 0 else 255 if c >= 255 else c for c in p]
+        if len(p) == 3:
+            p = (p[0], p[1], p[2])
+        data.append(p)
+    img = img.copy()
+    img.putdata(data)
+    return img
+
+
+def find_background_color(img):
+    w = img.width
+    h = img.height
+    cc_border = dict()
+    def add(p):
+        if p in cc_border:
+            cc_border[p] += 1
+        else:
+            cc_border[p] = 1
+    for y in (0, h - 1):
+        for x in range(0, w):
+            add(img.getpixel((x, y)))
+    for x in (0, w - 1):
+        for y in range(0, h):
+            add(img.getpixel((x, y)))
+    cnt_max = 0
+    color_max = None
+    for c, v in cc_border.items():
+        if v > cnt_max:
+            color_max = c
+            cnt_max = v
+    return color_max
+
+
+def find_text_color(img):
+    bg_color = find_background_color(img)
+    cc = dict()
+    def add(p, v):
+        if p in cc:
+            cc[p] += v
+        else:
+            cc[p] = v
+    for p in img.getdata():
+        d = color_difference(p, bg_color)
+        add(p, d)
+    cnt_max = 0
+    color_max = None
+    for c, v in cc.items():
+        if v > cnt_max:
+            color_max = c
+            cnt_max = v
+    return (color_max, bg_color)
