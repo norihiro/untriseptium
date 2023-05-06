@@ -31,7 +31,7 @@ class _Text():
                f'at ({self.left} {self.top} {right} {bottom}) ' \
                f'size {self.width}x{self.height}'
 
-    def _set(self, header, line):
+    def _set(self, header, line, offset):
         for i, t in enumerate(line):
             if header[i] == 'level':
                 self.level = int(t)
@@ -46,9 +46,9 @@ class _Text():
             elif header[i] == 'word_num':
                 self.word_num = int(t)
             elif header[i] == 'left':
-                self.left = int(t)
+                self.left = int(t) + offset[0]
             elif header[i] == 'top':
-                self.top = int(t)
+                self.top = int(t) + offset[1]
             elif header[i] == 'width':
                 self.width = int(t)
             elif header[i] == 'height':
@@ -56,7 +56,7 @@ class _Text():
             elif header[i] == 'conf':
                 self.confidence = float(t) / 100.0
             elif header[i] == 'text':
-                self.text = t
+                self.text = t.strip()
         self.location = Location(self.left, self.top, self.left + self.width,
                                  self.top + self.height)
 
@@ -94,6 +94,13 @@ def _conf_old_word(t, current_location):
     return t.confidence
 
 
+def _ocrdata_has_valid_data(ocrdata):
+    for t in ocrdata:
+        if t.text:
+            return True
+    return False
+
+
 class BackendTesseract:
     def __init__(self):
         # FIXME: Workaround to avoid system to be shutdown
@@ -116,7 +123,11 @@ class BackendTesseract:
             self.lang = 'jpn'
             self.find_texts = self._find_texts_para_partial
 
-    def ocr(self, image):
+    def _ocr_subregion(self, image, subregion):
+        if subregion:
+            image = image.crop(subregion)
+            offset = subregion
+        offset = (0, 0)
         from pytesseract import pytesseract
         tsv = pytesseract.image_to_data(image, lang=self.lang)
 
@@ -131,10 +142,24 @@ class BackendTesseract:
                 continue
             d = _Text()
             try:
-                d._set(header, line)
+                d._set(header, line, offset)
             except BaseException as e:
                 raise (Exception('Failed to parse line: "%s"' % line, e))
             data.append(d)
+
+        return data
+
+    def ocr(self, image):
+        data = self._ocr_subregion(image, None)
+
+        # Tesseract sometimes returns nothing when the image is big.
+        # This is a workaround to have smaller image.
+        if not _ocrdata_has_valid_data(data):
+            h = int(image.height / 8)
+            for y in range(0, image.height, int(h / 2)):
+                data1 = self._ocr_subregion(image, (0, y, image.width, y + h))
+                for t in data1:
+                    data.append(t)
 
         return data
 
