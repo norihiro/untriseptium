@@ -127,7 +127,8 @@ class BackendTesseract:
         if subregion:
             image = image.crop(subregion)
             offset = subregion
-        offset = (0, 0)
+        else:
+            offset = (0, 0)
         from pytesseract import pytesseract
         tsv = pytesseract.image_to_data(image, lang=self.lang)
 
