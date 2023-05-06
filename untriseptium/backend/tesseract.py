@@ -299,7 +299,7 @@ class BackendTesseract:
                     else:
                         t.text = ocr_txt.text
                     t.add_location(ocr_txt.location)
-                t.confidence = conf_tot / textlen_total
+                t.confidence = conf_tot / textlen_total if textlen_total else 0
 
                 confidence = self._conf_ocr_text(t, text)
                 if confidence < self.confidence_threshold:
