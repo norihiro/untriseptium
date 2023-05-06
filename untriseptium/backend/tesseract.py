@@ -117,6 +117,7 @@ class BackendTesseract:
         # FIXME: Consider to define some presets for these numbers.
         self.ocr_unconfidence_ratio = 0.4
         self.confidence_threshold = 0.2
+        self.ocr_split_height = 128
 
     def preset(self, preset_name):
         if preset_name == 'ja':
@@ -156,7 +157,7 @@ class BackendTesseract:
         # Tesseract sometimes returns nothing when the image is big.
         # This is a workaround to have smaller image.
         if not _ocrdata_has_valid_data(data):
-            h = int(image.height / 8)
+            h = self.ocr_split_height
             for y in range(0, image.height, int(h / 2)):
                 data1 = self._ocr_subregion(image, (0, y, image.width, y + h))
                 for t in data1:
