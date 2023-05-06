@@ -288,7 +288,12 @@ class BackendTesseract:
                 i_para_start = i_end + 1
                 continue
 
+            if not data[i_end].text:
+                continue
+
             for i_start in range(i_para_start, i_end + 1):
+                if data[i_start].confidence < 0 or not data[i_start].text:
+                    continue
                 t = TextLocator()
                 conf_tot = 0.0
                 textlen_total = 0
