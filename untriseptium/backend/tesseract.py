@@ -185,10 +185,10 @@ class BackendTesseract:
 
     def _conf_ocr_text(self, ocr_txt, ideal_txt):
         distance = editdistance.eval(ocr_txt.text, ideal_txt)
-        max_length = max(len(ocr_txt.text), len(ideal_txt))
-        ocr_invconf = (1.0 - ocr_txt.confidence) * self.ocr_unconfidence_ratio
-        return ((max_length - distance) * ocr_txt.confidence +
-                distance * ocr_invconf) / max_length
+        conf_dist = (len(ideal_txt) - distance) / len(ideal_txt)
+        if conf_dist < 0.0:
+            conf_dist = 0.0
+        return conf_dist
 
     def find_texts(self, data, text):
         return self._find_texts_para_partial(data, text)
