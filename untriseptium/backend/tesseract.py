@@ -184,8 +184,10 @@ class BackendTesseract:
         return self._ocr_pyramid_subregion(image, crop)
 
     def _conf_ocr_text(self, ocr_txt, ideal_txt):
-        distance = editdistance.eval(ocr_txt.text, ideal_txt)
-        conf_dist = (len(ideal_txt) - distance) / len(ideal_txt)
+        dist = editdistance.eval(ocr_txt.text, ideal_txt)
+        dist_ic = editdistance.eval(ocr_txt.text.lower(), ideal_txt.lower())
+        dist_combined = (dist + dist_ic) * 0.5
+        conf_dist = (len(ideal_txt) - dist_combined) / len(ideal_txt)
         if conf_dist < 0.0:
             conf_dist = 0.0
         return conf_dist
