@@ -43,10 +43,13 @@ class Untriseptium:
         self.screenshot = self.frontend.screenshot()
         self.ocrdata = None
 
-    def ocr(self):
+    def ocr(self, image_filter=None, crop=None):
         if not self.screenshot:
             self.capture()
-        self.ocrdata = self.ocrengine.ocr(self.screenshot)
+        s = self.screenshot
+        if image_filter:
+            s = image_filter(s)
+        self.ocrdata = self.ocrengine.ocr(s, crop)
 
     def find_texts(self, text, location_hint=None, color_hint=None, create_image=False):
         if not self.ocrdata:

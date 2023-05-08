@@ -118,6 +118,7 @@ class BackendTesseract:
         self.ocr_unconfidence_ratio = 0.4
         self.confidence_threshold = 0.2
         self.ocr_split_height = 128
+        self.ocr_split_depth = 2
 
     def preset(self, preset_name):
         if preset_name == 'ja':
@@ -151,19 +152,36 @@ class BackendTesseract:
 
         return data
 
-    def ocr(self, image):
-        data = self._ocr_subregion(image, None)
+    def _ocr_pyramid_subregion(self, image, subregion, depth=0):
+        data = self._ocr_subregion(image, subregion)
 
         # Tesseract sometimes returns nothing when the image is big.
         # This is a workaround to have smaller image.
-        if not _ocrdata_has_valid_data(data):
-            h = self.ocr_split_height
-            for y in range(0, image.height, int(h / 2)):
-                data1 = self._ocr_subregion(image, (0, y, image.width, y + h))
-                for t in data1:
-                    data.append(t)
+        h = subregion[3] - subregion[1]
+        if _ocrdata_has_valid_data(data):
+            return data
+
+        if h < self.ocr_split_height or depth >= self.ocr_split_depth:
+            return list()
+
+        data = list()
+        h1 = int(h / 2)
+        h_step = int((h - h1) / 2)
+        if h1 < self.ocr_split_height:
+            h1 = self.ocr_split_height
+        for y in range(subregion[1], subregion[3] - h1, h_step):
+            print(f'{subregion} y={y} h_step={h_step} h1={h1}')
+            sr1 = (subregion[0], y, subregion[2], y + h1)
+            data1 = self._ocr_pyramid_subregion(image, sr1, depth+1)
+            for t in data1:
+                data.append(t)
 
         return data
+
+    def ocr(self, image, crop=None):
+        if not crop:
+            crop = (0, 0, image.width, image.height)
+        return self._ocr_pyramid_subregion(image, crop)
 
     def _conf_ocr_text(self, ocr_txt, ideal_txt):
         distance = editdistance.eval(ocr_txt.text, ideal_txt)
