@@ -332,8 +332,23 @@ class BackendTesseract:
                 if confidence < self.confidence_threshold:
                     continue
 
+                # Prioritize paragraphs.
+                # If the sequence is a subset of the paragraph, use distance to
+                # the words located before/after.
+                if data[i_start - 1].confidence > 0:
+                    sp = ocr_txt.location.x0 - data[i_start - 1].location.x1
+                    inv_space_before = 1.0 / sp if sp > 0 else 0.0
+                else:
+                    inv_space_before = 0.0
+                if i_end + 1 < len(data) and data[i_end + 1].confidence > 0:
+                    sp = data[i_end + 1].location.x0 - ocr_txt.location.x1
+                    inv_space_after = 1.0 / sp if sp > 0 else 0.0
+                else:
+                    inv_space_after = 0.0
+
                 d = deepcopy(t)
                 d.confidence = confidence
+                d.sum_inv_spaces = inv_space_before + inv_space_after
                 cand.append(d)
 
-        return sorted(cand, key=lambda d: -d.confidence)
+        return sorted(cand, key=lambda d: (-d.confidence, d.sum_inv_spaces))
