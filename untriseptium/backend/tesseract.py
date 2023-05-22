@@ -170,7 +170,6 @@ class BackendTesseract:
         if h1 < self.ocr_split_height:
             h1 = self.ocr_split_height
         for y in range(subregion[1], subregion[3] - h1, h_step):
-            print(f'{subregion} y={y} h_step={h_step} h1={h1}')
             sr1 = (subregion[0], y, subregion[2], y + h1)
             data1 = self._ocr_pyramid_subregion(image, sr1, depth+1)
             for t in data1:
