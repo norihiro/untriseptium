@@ -1,4 +1,5 @@
 import pyautogui
+from PIL import ImageGrab
 
 
 class FrontendPyautogui:
@@ -8,4 +9,7 @@ class FrontendPyautogui:
         self.move = pyautogui.moveTo
 
     def screenshot(self):
-        return pyautogui.screenshot(region=self._region)
+        try:
+            return ImageGrab.grab()
+        except:
+            return pyautogui.screenshot(region=self._region)
