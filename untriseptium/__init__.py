@@ -51,17 +51,20 @@ class Untriseptium:
             s = image_filter(s)
         self.ocrdata = self.ocrengine.ocr(s, crop)
 
-    def find_texts(self, text, location_hint=None, color_hint=None, create_image=False):
+    def find_texts(self, text, location_hint=None, color_hint=None, create_image=False, **kwargs):
         if not self.ocrdata:
             self.ocr()
 
-        texts = self.ocrengine.find_texts(self.ocrdata, text)
+        texts = self.ocrengine.find_texts(self.ocrdata, text, **kwargs)
 
         if location_hint:
-            xyh = (
-                    location_hint[0] * self.screenshot.width,
-                    location_hint[1] * self.screenshot.height
-                    )
+            if isinstance(location_hint[0], float):
+                xyh = (
+                        location_hint[0] * self.screenshot.width,
+                        location_hint[1] * self.screenshot.height
+                        )
+            else:
+                xyh = (location_hint[0], location_hint[1])
             if len(location_hint) > 2:
                 ambiguity = location_hint[2] * math.hypot(self.screenshot.width, self.screenshot.height)
             else:
