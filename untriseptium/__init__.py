@@ -51,11 +51,14 @@ class Untriseptium:
             s = image_filter(s)
         self.ocrdata = self.ocrengine.ocr(s, crop)
 
-    def find_texts(self, text, location_hint=None, color_hint=None, create_image=False, **kwargs):
+    def find_texts(self, text, location_hint=None, color_hint=None, create_image=False, confidence_threshold=0.8, **kwargs):
         if not self.ocrdata:
             self.ocr()
 
         texts = self.ocrengine.find_texts(self.ocrdata, text, **kwargs)
+
+        if confidence_threshold:
+            texts = [t for t in texts if t.confidence >= confidence_threshold]
 
         if location_hint:
             if isinstance(location_hint[0], float):
