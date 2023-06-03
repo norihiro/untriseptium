@@ -8,6 +8,29 @@ def _weighted_sum(v1, w1, v2, w2):
     return (v1 * w1 + v2 + w2) / (w1 + w2)
 
 
+def _legalize_frequent_misdetection(t):
+    return t \
+            .replace('!', 'l') \
+            .replace('~', '-') \
+            .replace(';', ':') \
+            .replace(',', '.') \
+            .replace('|', 'l') \
+            .replace('0', 'o') \
+            .replace('1', 'l') \
+            .replace('I', 'l') \
+            .replace('C', 'c') \
+            .replace('K', 'k') \
+            .replace('O', 'o') \
+            .replace('P', 'p') \
+            .replace('S', 's') \
+            .replace('U', 'u') \
+            .replace('V', 'v') \
+            .replace('W', 'w') \
+            .replace('X', 'x') \
+            .replace('Y', 'y') \
+            .replace('Z', 'z')
+
+
 class _Text():
     def __init__(self):
         self.level = 0
@@ -183,8 +206,16 @@ class BackendTesseract:
         return self._ocr_pyramid_subregion(image, crop)
 
     def _conf_ocr_text(self, ocr_txt, ideal_txt):
-        dist = editdistance.eval(ocr_txt.text, ideal_txt)
-        dist_ic = editdistance.eval(ocr_txt.text.lower(), ideal_txt.lower())
+        t1 = ocr_txt.text
+        t2 = ideal_txt
+        dist = editdistance.eval(t1, t2)
+        if dist > 0:
+            # Score 0.1 for the frequently misdetected characters.
+            t1 = _legalize_frequent_misdetection(t1)
+            t2 = _legalize_frequent_misdetection(t2)
+            dist_md = editdistance.eval(t1, t2)
+            dist = dist * 0.2 + dist_md * 0.8
+        dist_ic = editdistance.eval(t1.lower(), t2.lower())
         dist_combined = (dist + dist_ic) * 0.5
         conf_dist = (len(ideal_txt) - dist_combined) / len(ideal_txt)
         if conf_dist < 0.0:
